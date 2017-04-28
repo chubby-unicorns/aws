@@ -1,0 +1,229 @@
+---
+# NOTES:
+  # Source: https://mike.lapidak.is/thoughts/tagging-and-snapshotting-with-lambda
+  # modified and split in two
+
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Create and tag snapshots, clean up old snapshots
+Resources: 
+# IAM permission for both functions
+  LambdaEBSSnapshotsRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: LambdaEBSSnapshots
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:CreateSnapshot'
+                  - 'ec2:CreateTags'
+                  - 'ec2:DeleteSnapshot'
+                  - 'ec2:Describe*'
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - '*'
+
+# LambdaEBSSnapshots
+  LambdaEBSSnapshots:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: !Join 
+          - |+
+
+          - - 'import boto3'
+            - 'import logging'
+            - 'import datetime'
+            - 'import re'
+            - 'import time'
+            - ''
+            - '#setup simple logging for INFO'
+            - 'logger = logging.getLogger()'
+            - '# logger.setLevel(logging.INFO)'
+            - 'logger.setLevel(logging.ERROR)'
+            - ''
+            - '#get the current region'
+            - 'session = boto3.session.Session()'
+            - 'session_region = session.region_name'
+            - ''
+            - '#define the connection'
+            - 'ec2 = boto3.resource("ec2", region_name=session_region)'
+            - ''
+            - '#set the snapshot removal offset'
+            - 'cleanDate = datetime.datetime.now()-datetime.timedelta(days=5)'
+            - ''
+            - '#Set this to True if you don"t want the function to perform any actions'
+            - 'debugMode = False'
+            - '# debugMode = True'
+            - ''
+            - 'def lambda_handler(event, context):'
+            - '    '
+            - '    if debugMode == True:'
+            - '        print("-------DEBUG MODE----------")'
+            - ''
+            - '#snapshop the instances'
+            - '    # for vol in ec2.volumes.all():'
+            - '    for vol in ec2.volumes.filter('
+            - '        VolumeIds=[],'
+            - '        Filters=[{'
+            - '                "Name": "tag:Backups",'
+            - '                "Values": ['
+            - '                    "true",'
+            - '                    "True",'
+            - '                    "yes",'
+            - '                    "Yes"'
+            - '                ]}]):'
+            - '        tempTags=[]'
+            - '        print(tempTags)'
+            - '        '
+            - '        #Prepare Volume tags to be imported into the snapshot'
+            - '        if vol.tags != None:'
+            - '            for t in vol.tags:'
+            - '                '
+            - '                #pull the name tag'
+            - '                if t["Key"] == "Name":'
+            - '                    instanceName =  t["Value"]'
+            - '                    tempTags.append(t)'
+            - '                # else:'
+            - '                #     tempTags.append(t)'
+            - '        else:'
+            - '            print("Issue retrieving tag")'
+            - '            instanceName = "NoName"'
+            - '            t["Key"] = "Name"'
+            - '            t["Value"] = "Missing"'
+            - '            tempTags.append(t)'
+            - '        '
+            - '        description = str(datetime.datetime.now()) + "-" + instanceName + "-" + vol.id + "-automated"'
+            - '        '
+            - '        if debugMode != True:'
+            - '            #snapshot that server'
+            - '            snapshot = ec2.create_snapshot(VolumeId=vol.id, Description=description)'
+            - '            '
+            - '            #write the tags to the snapshot'
+            - '            tags = snapshot.create_tags('
+            - '                    Tags=tempTags'
+            - '                )'
+            - '            print("[LOG] " + str(snapshot))'
+            - '            '
+            - '        else:'
+            - '            print("[DEBUG] " + str(tempTags))'
+      Description: A lambda function that create and tags EBS snapshot.
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaEBSSnapshotsRole.Arn
+      Runtime: python2.7
+      Timeout: '60'
+  LambdaEBSSnapshotsTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${LambdaEBSSnapshots}
+      Description: !Sub Trigger for function ${LambdaEBSSnapshots}
+      ScheduleExpression: cron(0 18 ? * MON-FRI *) # 6PM UTC MON-FRI 
+      State: ENABLED
+      Targets:
+      - Arn: !GetAtt LambdaEBSSnapshots.Arn
+        Id: LambdaEBSSnapshotsTrigger
+  LambdaEBSSnapshotsPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub ${LambdaEBSSnapshots}
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaEBSSnapshotsTrigger.Arn
+
+# LambdaEBSSnapshotsCleanup
+  LambdaEBSSnapshotsCleanup:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      Code:
+        ZipFile: !Join 
+          - |+
+
+          - - 'import boto3'
+            - 'import logging'
+            - 'import datetime'
+            - 'import re'
+            - 'import time'
+            - ''
+            - '#setup simple logging for INFO'
+            - 'logger = logging.getLogger()'
+            - '# logger.setLevel(logging.INFO)'
+            - 'logger.setLevel(logging.ERROR)'
+            - ''
+            - '#get the current region'
+            - 'session = boto3.session.Session()'
+            - 'session_region = session.region_name'
+            - ''
+            - '#define the connection'
+            - 'ec2 = boto3.resource("ec2", region_name=session_region)'
+            - ''
+            - '#set the snapshot removal offset'
+            - 'cleanDate = datetime.datetime.now()-datetime.timedelta(days=5)'
+            - ''
+            - '#Set this to True if you don"t want the function to perform any actions'
+            - 'debugMode = False'
+            - '# debugMode = True'
+            - ''
+            - 'def lambda_handler(event, context):'
+            - '    '
+            - '    if debugMode == True:'
+            - '        print("-------DEBUG MODE----------")'
+            - ''
+            - '#clean up old snapshots'
+            - '    print "[LOG] Cleaning out old entries starting on " + str(cleanDate)'
+            - '    for snap in ec2.snapshots.all():'
+            - ''
+            - '        #veryify results have a value'
+            - '        if snap.description.endswith("-automated"): '
+            - '            '
+            - '            #Pull the snapshot date'
+            - '            snapDate = snap.start_time.replace(tzinfo=None)'
+            - '            if debugMode == True:'
+            - '                print("[DEBUG] " + str(snapDate) +" vs " + str(cleanDate)) '
+            - '            '
+            - '            #Compare the clean dates'
+            - '            if cleanDate > snapDate:'
+            - '                print("[INFO] Deleting: " + snap.id + " - From: " + str(snapDate))'
+            - '                if debugMode != True:'
+            - '                    try:'
+            - '                        snapshot = snap.delete()'
+            - '                    except:'
+            - '                        #if we timeout because of a rate limit being exceeded, give it a rest of a few seconds'
+            - '                        print("[INFO]: Waiting 5 Seconds for the API to Chill")'
+            - '                        time.sleep(5)'
+            - '                        snapshot = snap.delete()'
+            - '                    print("[INFO] " + str(snapshot))'
+      Description: A lambda function that cleans up old EBS snapshots.
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaEBSSnapshotsRole.Arn
+      Runtime: python2.7
+      Timeout: '120' # this is a fairly long-running function
+  LambdaEBSSnapshotsCleanupTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${LambdaEBSSnapshotsCleanup}
+      Description: !Sub Trigger for function ${LambdaEBSSnapshotsCleanup}
+      ScheduleExpression: cron(0 18 ? * SAT *) # 6PM UTC SAT 
+      State: ENABLED
+      Targets:
+      - Arn: !GetAtt LambdaEBSSnapshotsCleanup.Arn
+        Id: LambdaEBSSnapshotsCleanupTrigger
+  LambdaEBSSnapshotsCleanupPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub ${LambdaEBSSnapshotsCleanup}
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaEBSSnapshotsCleanupTrigger.Arn

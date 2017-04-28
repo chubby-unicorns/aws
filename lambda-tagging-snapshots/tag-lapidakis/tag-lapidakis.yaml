@@ -1,0 +1,148 @@
+---
+# NOTES:
+  # Source: https://mike.lapidak.is/thoughts/tagging-and-snapshotting-with-lambda
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Tag all volumes and ENIs attached to instances
+Resources: 
+# LambdaEC2Tagging
+  LambdaEC2Tagging:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      # FunctionName: 'EC2ResourceTagging'
+      Code:
+        ZipFile: !Join 
+          - |+
+
+          - - '# AWS Lambda Function to tag ENIs and EBS volumes with the parent"s name and mountpoint'
+            - '#   Source: https://mike.lapidak.is/thoughts/tagging-and-snapshotting-with-lambda'
+            - '#           https://gist.github.com/mlapida/931c03cce1e9e43f147b#file-ec2-tag-assets-lambda-py'
+            - ''
+            - 'from __future__ import print_function'
+            - 'import json'
+            - 'import boto3'
+            - 'import logging'
+            - ''
+            - '#setup simple logging for INFO'
+            - 'logger = logging.getLogger()'
+            - 'logger.setLevel(logging.ERROR)'
+            - ''
+            - '#get the current region'
+            - 'session = boto3.session.Session()'
+            - 'session_region = session.region_name'
+            - ''
+            - '#define the connection region'
+            - 'ec2 = boto3.resource("ec2", region_name=session_region)'
+            - ''
+            - '#Set this to True if you don"t want the function to perform any actions'
+            - 'debugMode = False'
+            - ''
+            - 'def lambda_handler(event, context):'
+            - '    #List all EC2 instances'
+            - '    base = ec2.instances.all()'
+            - ''
+            - '    #loop through by running instances'
+            - '    for instance in base:'
+            - '        '
+            - '        #Tag the Volumes'
+            - '        for vol in instance.volumes.all():'
+            - '            #print(vol.attachments[0]["Device"])'
+            - '            if debugMode == True:'
+            - '                print("[DEBUG] " + str(vol))'
+            - '                tag_cleanup(instance, vol.attachments[0]["Device"])'
+            - '            else:'
+            - '                tag = vol.create_tags(Tags=tag_cleanup(instance, vol.attachments[0]["Device"]))'
+            - '                print("[INFO]: " + str(tag))'
+            - '        '
+            - '        #Tag the Network Interfaces'
+            - '        for eni in instance.network_interfaces:'
+            - '            #print(eni.attachment["DeviceIndex"])'
+            - '            if debugMode == True:'
+            - '                print("[DEBUG] " + str(eni))'
+            - '                tag_cleanup(instance, "eth"+str(eni.attachment["DeviceIndex"]))'
+            - '            else:'
+            - '                tag = eni.create_tags(Tags=tag_cleanup(instance, "eth"+str(eni.attachment["DeviceIndex"])))'
+            - '                print("[INFO]: " + str(tag))'
+            - ''
+            - '#------------- Functions ------------------'
+            - '#returns the type of configuration that was performed    '
+            - '        '
+            - 'def tag_cleanup(instance, detail):'
+            - '    tempTags=[]'
+            - '    v={}'
+            - ''
+            - '    for t in instance.tags:'
+            - '        #pull the name tag'
+            - '        if t["Key"] == "Name":'
+            - '            v["Value"] = t["Value"] + " - " + str(detail)'
+            - '            v["Key"] = "Name"'
+            - '            tempTags.append(v)'
+            - '        #Set the important tags that should be written here  '
+            - '        elif t["Key"] == "Application Owner":'
+            - '            print("[INFO]: Application Owner Tag " + str(t))'
+            - '            tempTags.append(t)    '
+            - '        elif t["Key"] == "Cost Center":'
+            - '            print("[INFO]: Cost Center Tag " + str(t))'
+            - '            tempTags.append(t)  '
+            - '        elif t["Key"] == "Date Created":'
+            - '            print("[INFO]: Date Created Tag " + str(t))'
+            - '            tempTags.append(t)  '
+            - '        elif t["Key"] == "Requestor":'
+            - '            print("[INFO]: Requestor Tag " + str(t))'
+            - '            tempTags.append(t)  '
+            - '        elif t["Key"] == "System Owner":'
+            - '            print("[INFO]: System Owner Tag " + str(t))'
+            - '            tempTags.append(t)'
+            - '        else:'
+            - '            print("[INFO]: Skip Tag - " + str(t))'
+            - ''
+            - '    print("[INFO] " + str(tempTags))'
+            - '    return(tempTags)'
+      Description: A lambda function that will copy EC2 tags to all related Volumes and Network Interfaces.
+      Handler: index.lambda_handler
+      Role: !GetAtt LambdaEC2TaggingRole.Arn
+      Runtime: python2.7
+      Timeout: '60'
+  LambdaEC2TaggingRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: LambdaEC2Tagging
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:CreateTags'
+                  - 'ec2:Describe*'
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - '*'
+  LambdaEC2TaggingTrigger:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: !Sub ${LambdaEC2Tagging}
+      Description: !Sub Trigger for function ${LambdaEC2Tagging}
+      # ScheduleExpression: cron(0/15 * * * ? *) # every 15 minutes
+      ScheduleExpression: rate(15 minutes)
+      State: ENABLED
+      Targets:
+      - Arn: !GetAtt LambdaEC2Tagging.Arn
+        Id: LambdaEC2TaggingTrigger
+  LambdaEC2TaggingPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Sub ${LambdaEC2Tagging}
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt LambdaEC2TaggingTrigger.Arn
