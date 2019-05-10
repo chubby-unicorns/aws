@@ -2,6 +2,7 @@
 
 ## cfstackexport.sh
 
+### Output
 Results in 3 output files, in a folder structure starting with `accountid`, then `region`:
 
 1. Export cloudformation stacks from all regions. Output to folder structure `$accountid/$region/stackname.describe.json`.
@@ -10,11 +11,15 @@ Results in 3 output files, in a folder structure starting with `accountid`, then
 
 *It also times execution (this may eventually end up in a lambda function, so I needed to get an indication of how long it runs).*
 
+### Zip archival
+It archives *existing* output data into `$accountid-pre[YYYMMDD-HHmm].zip` (and optionally deletes said data) and *current* output to `$accountid-[YYYMMDD-HHmm].zip`
+
 ### Prerequisites
 
-1. iam user &/ role that has read access to cloudformation
-2. aws cli
-3. jq
+1. `iam user &/ role` with read access to cloudformation
+2. `aws cli`
+3. `jq`
+4. `zip` - used to create zip archives of current and previous output.
 
 ### Example output
 
