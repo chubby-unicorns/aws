@@ -2,16 +2,19 @@
 
 ## cfstackexport.sh
 
-Export cloudformation stacks from all regions. Output to folder structure `$accountid/$region/stackname.json`.
+Results in 3 output files, in a folder structure starting with `accountid`, then `region`:
 
-Parameters are extracted into json parameter file. `$accountid/$region/stackname.params.json`.
+1. Export cloudformation stacks from all regions. Output to folder structure `$accountid/$region/stackname.describe.json`.
+2. Parameters are extracted into json parameter file. `$accountid/$region/stackname.params.json`.
+3. The stack template is exported to `$accountid/$region/stackname.[json|yaml]`
 
-It also times execution (this may eventually end up in a lambda function, so I needed to get an indication of how long it runs).
+*It also times execution (this may eventually end up in a lambda function, so I needed to get an indication of how long it runs).*
 
 ### Prerequisites
 
-1. aws cli
-2. jq
+1. iam user &/ role that has read access to cloudformation
+2. aws cli
+3. jq
 
 ### Example output
 
@@ -41,10 +44,10 @@ Exporting CloudFromation stacks for account 112233445566 (acmecorpprod)
   us-west-2...
 
 Stacks Exported:
- 112233445566/eu-west-1/: 14
+ 112233445566/eu-west-1/: 2
  112233445566/us-east-1/: 1
 
-Run time: 66 seconds.
+Run time: 23 seconds.
 ```
 
 Output tree:
@@ -61,43 +64,42 @@ huevos@PF0Z9M0A:~/code/cfstacks/112233445566$ tree
 ├── eu-central-1
 ├── eu-north-1
 ├── eu-west-1
-│   ├── iamtest.json
+│   ├── iamtest.describe.json
+│   ├── iamtest.yaml
 │   ├── iamtest.params.json
-│   ├── iotrules.json
-│   ├── iotrules.params.json
-│   ├── keyrotation.json
-│   ├── keyrotation.params.json
-│   ├── SC-112233445566-pp-rspku4yrrnv4o.json
-│   ├── SC-112233445566-pp-rspku4yrrnv4o.params.json
-│   ├── sc-portfolio-workspaces.json
-│   ├── sc-portfolio-workspaces.params.json
-│   ├── sc-product-workspace-dataanalyst.json
-│   ├── sc-product-workspace-dataanalyst.params.json
-│   ├── sc-product-workspace-imaging.json
-│   ├── sc-product-workspace-imaging.params.json
-│   ├── sc-product-workspace-training.json
-│   ├── sc-product-workspace-training.params.json
-│   ├── sc-s3-bucket-set.json
-│   ├── sc-s3-bucket-set.params.json
-│   ├── serverlessrepo-ALB-Test.json
-│   ├── serverlessrepo-ALB-Test.params.json
-│   ├── simplead.json
-│   ├── simplead.params.json
-│   ├── acctFundamentals.json
-│   ├── acctFundamentals.params.json
-│   ├── stalesgs.json
-│   ├── stalesgs.params.json
+│   └── vpc.describe.json
 │   └── vpc.json
 │   └── vpc.params.json
 ├── eu-west-2
 ├── eu-west-3
 ├── sa-east-1
 ├── us-east-1
+│   └── dashbird-integration-stack.describe.json
 │   └── dashbird-integration-stack.json
 │   └── dashbird-integration-stack.params.json
 ├── us-east-2
 ├── us-west-1
 └── us-west-2
 
-16 directories, 30 files
+16 directories, 9 files
 ```
+## Oddities
+
+### Service Catalog-deployed stack templates
+***Service Catalog-deployed stack templates*** have values explicitly stated as `!!bool` or `!!int` *(the original template used for SC did not)*:
+
+```yaml
+    'AllowedValues':
+    - !!bool 'true'
+```
+
+and 
+
+```yaml
+    'AllowedValues':
+    - !!int '32'
+```
+
+### Stacks with no parameters
+
+***Stacks with no parameters*** - the exported `*.params.json` file will have the value `null` on the first line.
