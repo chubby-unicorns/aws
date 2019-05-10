@@ -29,8 +29,14 @@ exportstacks(){
             --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE --region $R \
             | jq -r .StackSummaries[].StackName); 
         do aws cloudformation describe-stacks \
-            --stack-name $S --region $R > $accountid/$R/$S.json;
-            jq '.Stacks[].Parameters' $accountid/$R/$S.json > $accountid/$R/$S.params.json
+            --stack-name $S --region $R > $accountid/$R/$S.describe.json;
+            jq '.Stacks[].Parameters' $accountid/$R/$S.describe.json > $accountid/$R/$S.params.json
+            aws cloudformation get-template --stack-name $S  --region $R --query TemplateBody | jq -r . > $accountid/$R/$S.template  # jq -r doesn't do much to json templates, but unpacks yaml properly. *.template could be yaml or json. 
+            if [[ $(head -c 1 $accountid/$R/$S.template) == "{" ]]; then
+                mv $accountid/$R/$S.template $accountid/$R/$S.json
+            else
+                mv $accountid/$R/$S.template $accountid/$R/$S.yaml
+            fi
         done
 }
 
