@@ -56,18 +56,42 @@ counter(){
     done
 }
 
+zipall(){
+    command -v zip  > /dev/null 2>&1
+    if [[ $? != 0 ]];then
+        echo -e "zip not installed. Cannot create archive."
+        exit 1
+    fi
+    echo -e "\nCreating archive $accountid-$NOW.zip"
+    zip --quiet -r $accountid-$NOW.zip $accountid/
+}
 
+zipold(){
+    command -v zip  > /dev/null 2>&1
+    if [[ $? != 0 ]];then
+        echo -e "zip not installed. Cannot create archive."
+        exit 1
+    fi
+    echo -e "Creating archive of existing output: $accountid-pre$NOW.zip"
+    zip --quiet -r $accountid-pre$NOW.zip $accountid/
+}
+
+NOW=$(date -d "today" +"%Y%m%d-%H%M")
 start0=`date +%s`
 accountid=$(aws sts get-caller-identity --query "Account" --out text)
 end0=`date +%s`
-confirmdelete
+
+if [[ -d $accountid ]];then
+    zipold
+    confirmdelete
+fi
 start=`date +%s`
 alias=$(aws iam list-account-aliases --query "AccountAliases[0]" --out text)
 if [[ $alias != "" ]]; then alias="($alias)"; fi
 echo -e "Exporting CloudFromation stacks for account $accountid $alias\n Processing region $R..."
 for R in $(getregions); do exportstacks; done
 counter
-
+zipall
 end=`date +%s`
 
 runtime=$((end0-start0+end-start))
